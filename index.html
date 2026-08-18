@@ -415,15 +415,27 @@
 
   <div id="recurringRow" class="checkbox-row">
     <input type="checkbox" id="fRecurring">
-    <label for="fRecurring" style="margin:0;">This repeats every ___ days until a date</label>
+    <label for="fRecurring" style="margin:0;">This is a recurring due</label>
   </div>
 
   <div id="recurringFields" style="display:none;">
     <div class="row">
       <div>
+        <label>Repeat pattern</label>
+        <select id="fRepeatPattern">
+          <option value="custom">Every ___ days</option>
+          <option value="monthly">Every month (same date)</option>
+          <option value="halfmonth">Twice a month (15th &amp; end of month)</option>
+        </select>
+      </div>
+    </div>
+    <div class="row" id="customDaysRow">
+      <div>
         <label>Repeat every (days)</label>
         <input type="number" id="fRepeatDays" min="1" placeholder="e.g. 30">
       </div>
+    </div>
+    <div class="row">
       <div>
         <label>Until</label>
         <input type="date" id="fRepeatUntil">
@@ -489,6 +501,50 @@ function generateBiweeklyPayouts(startStr, endStr){
     result.push(formatDateLocal(cur));
     cur.setDate(cur.getDate() + 14);
   }
+  return result;
+}
+
+function daysInMonth(year, monthIndexZeroBased){
+  return new Date(year, monthIndexZeroBased + 1, 0).getDate();
+}
+
+function generateMonthlyOccurrences(startDateStr, endDateStr){
+  const start = new Date(startDateStr + "T00:00:00");
+  const end = new Date(endDateStr + "T00:00:00");
+  const targetDay = start.getDate();
+  const result = [];
+  let year = start.getFullYear();
+  let month = start.getMonth();
+  while(result.length < 500){
+    const dim = daysInMonth(year, month);
+    const useDay = Math.min(targetDay, dim);
+    const occurrence = new Date(year, month, useDay);
+    if(occurrence > end) break;
+    if(occurrence >= start) result.push(formatDateLocal(occurrence));
+    month += 1;
+    if(month > 11){ month = 0; year += 1; }
+  }
+  return result;
+}
+
+function generateHalfMonthOccurrences(startDateStr, endDateStr){
+  const start = new Date(startDateStr + "T00:00:00");
+  const end = new Date(endDateStr + "T00:00:00");
+  const result = [];
+  let year = start.getFullYear();
+  let month = start.getMonth();
+  while(result.length < 500){
+    const dim = daysInMonth(year, month);
+    const firstOcc = new Date(year, month, 15);
+    const secondOcc = new Date(year, month, dim);
+    [firstOcc, secondOcc].forEach(occ=>{
+      if(occ >= start && occ <= end) result.push(formatDateLocal(occ));
+    });
+    if(secondOcc > end) break;
+    month += 1;
+    if(month > 11){ month = 0; year += 1; }
+  }
+  result.sort();
   return result;
 }
 
@@ -653,6 +709,8 @@ function resetFormState(){
   document.getElementById("recurringRow").style.display = "flex";
   document.getElementById("fRecurring").checked = false;
   document.getElementById("recurringFields").style.display = "none";
+  document.getElementById("fRepeatPattern").value = "custom";
+  document.getElementById("customDaysRow").style.display = "flex";
 }
 
 function startEdit(id){
@@ -680,6 +738,10 @@ document.getElementById("fRecurring").addEventListener("change", function(){
   document.querySelector("#addForm .add-btn").textContent = show ? "+ Add Recurring Dues" : "+ Add Due";
 });
 
+document.getElementById("fRepeatPattern").addEventListener("change", function(){
+  document.getElementById("customDaysRow").style.display = this.value === "custom" ? "flex" : "none";
+});
+
 document.getElementById("addForm").addEventListener("submit", function(e){
   e.preventDefault();
   let dues = loadDues();
@@ -697,24 +759,37 @@ document.getElementById("addForm").addEventListener("submit", function(e){
     dues = dues.map(d => d.id === editingId ? {...d, ...formData} : d);
 
   } else if(isRecurring){
-    const repeatDays = parseInt(document.getElementById("fRepeatDays").value, 10);
+    const pattern = document.getElementById("fRepeatPattern").value;
     const untilDate = document.getElementById("fRepeatUntil").value;
 
-    if(!repeatDays || repeatDays < 1){
-      alert("Enter a valid number of days to repeat every.");
-      return;
-    }
     if(!untilDate || untilDate < formData.dueDate){
       alert("The 'Until' date must be on or after the due date.");
       return;
     }
 
-    const occurrenceDates = [];
-    let cur = new Date(formData.dueDate + "T00:00:00");
-    const end = new Date(untilDate + "T00:00:00");
-    while(cur <= end){
-      occurrenceDates.push(formatDateLocal(cur));
-      cur.setDate(cur.getDate() + repeatDays);
+    let occurrenceDates = [];
+
+    if(pattern === "custom"){
+      const repeatDays = parseInt(document.getElementById("fRepeatDays").value, 10);
+      if(!repeatDays || repeatDays < 1){
+        alert("Enter a valid number of days to repeat every.");
+        return;
+      }
+      let cur = new Date(formData.dueDate + "T00:00:00");
+      const end = new Date(untilDate + "T00:00:00");
+      while(cur <= end){
+        occurrenceDates.push(formatDateLocal(cur));
+        cur.setDate(cur.getDate() + repeatDays);
+      }
+    } else if(pattern === "monthly"){
+      occurrenceDates = generateMonthlyOccurrences(formData.dueDate, untilDate);
+    } else if(pattern === "halfmonth"){
+      occurrenceDates = generateHalfMonthOccurrences(formData.dueDate, untilDate);
+    }
+
+    if(occurrenceDates.length === 0){
+      alert("No occurrences were generated — check your dates.");
+      return;
     }
 
     if(occurrenceDates.length > 60){
@@ -748,7 +823,6 @@ document.getElementById("addForm").addEventListener("submit", function(e){
   this.reset();
   resetFormState();
   document.getElementById("fDueDate").value = todayStr();
-  document.getElementById("recurringFields").style.display = "none";
   render();
 });
 

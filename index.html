@@ -552,9 +552,9 @@ function inPayoutRange(dueDateStr){
   if(!payoutFilterValue) return true;
   const payouts = sortedPayouts();
   const idx = payouts.indexOf(payoutFilterValue);
-  const prevPayout = idx > 0 ? payouts[idx-1] : null;
-  if(prevPayout) return dueDateStr > prevPayout && dueDateStr <= payoutFilterValue;
-  return dueDateStr <= payoutFilterValue;
+  const nextPayout = idx < payouts.length - 1 ? payouts[idx + 1] : null;
+  if(nextPayout) return dueDateStr >= payoutFilterValue && dueDateStr < nextPayout;
+  return dueDateStr >= payoutFilterValue;
 }
 
 function renderPayoutSelect(){
@@ -972,13 +972,13 @@ document.querySelectorAll(".filters button").forEach(btn=>{
 // default due date to today for convenience
 document.getElementById("fDueDate").value = todayStr();
 
-// bi-weekly payout schedule: Aug 24, 2026 through Dec 2027
-// (forced once via version key so it corrects your earlier seed without
+// bi-weekly payout schedule: Aug 21, 2026 through Dec 2027
+// (forced once via version key so it corrects the earlier seed without
 // wiping out any custom payout dates you add afterward)
 const PAYOUT_SEED_VERSION_KEY = "dues_tracker_payouts_seed_version";
-const CURRENT_SEED_VERSION = "2";
+const CURRENT_SEED_VERSION = "3";
 if(localStorage.getItem(PAYOUT_SEED_VERSION_KEY) !== CURRENT_SEED_VERSION){
-  savePayouts(generateBiweeklyPayouts("2026-08-24", "2027-12-31"));
+  savePayouts(generateBiweeklyPayouts("2026-08-21", "2027-12-31"));
   localStorage.setItem(PAYOUT_SEED_VERSION_KEY, CURRENT_SEED_VERSION);
 }
 

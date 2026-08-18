@@ -212,13 +212,13 @@
     font-size:13px;
     padding:30px 0;
   }
-  .month-picker-row{
+  .month-picker-row,.payout-filter-row{
     display:flex;
     gap:8px;
     align-items:flex-end;
     padding:14px 16px 0;
   }
-  .month-picker-row > div{flex:1;}
+  .month-picker-row > div,.payout-filter-row > div{flex:1;min-width:0;}
   .clear-month-btn{
     padding:8px 12px;
     border:1px solid var(--border);
@@ -227,6 +227,64 @@
     font-size:12px;
     color:var(--text);
     white-space:nowrap;
+    flex-shrink:0;
+  }
+  .manage-payouts-panel{
+    margin:10px 16px 0;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:12px;
+  }
+  .payout-add-row{
+    display:flex;
+    gap:8px;
+  }
+  .payout-add-row input{flex:1;min-width:0;}
+  .add-payout-btn{
+    padding:8px 14px;
+    background:var(--green);
+    color:#0d1f18;
+    border:none;
+    border-radius:6px;
+    font-size:13px;
+    font-weight:700;
+    white-space:nowrap;
+    flex-shrink:0;
+  }
+  .payout-chips{
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+    margin-top:10px;
+  }
+  .payout-chip{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    border-radius:20px;
+    padding:5px 10px;
+    font-size:12px;
+    color:var(--text);
+    max-width:100%;
+  }
+  .payout-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .payout-chip button{
+    background:none;
+    border:none;
+    color:#ff6b6b;
+    font-size:12px;
+    padding:0;
+    line-height:1;
+    flex-shrink:0;
+  }
+  @media (max-width:340px){
+    .month-picker-row,.payout-filter-row,.payout-add-row{
+      flex-direction:column;
+      align-items:stretch;
+    }
   }
   .cancel-btn{
     width:100%;
@@ -273,12 +331,23 @@
   </div>
 </div>
 
-<div class="month-picker-row">
+<div class="payout-filter-row">
   <div>
-    <label>Filter by month</label>
-    <input type="month" id="monthFilterInput">
+    <label>Filter by payout</label>
+    <select id="payoutFilterSelect">
+      <option value="">All Payouts</option>
+    </select>
   </div>
-  <button type="button" id="clearMonthFilterBtn" class="clear-month-btn">All Months</button>
+  <button type="button" id="managePayoutsBtn" class="clear-month-btn">Manage</button>
+</div>
+
+<div id="managePayoutsPanel" class="manage-payouts-panel" style="display:none;">
+  <label>Add payout date</label>
+  <div class="payout-add-row">
+    <input type="date" id="newPayoutDate">
+    <button type="button" id="addPayoutBtn" class="add-payout-btn">Add</button>
+  </div>
+  <div id="payoutChipsList" class="payout-chips"></div>
 </div>
 
 <div class="filters">
@@ -338,9 +407,97 @@
 
 <script>
 const STORAGE_KEY = "dues_tracker_v1";
+const PAYOUT_KEY = "dues_tracker_payouts_v1";
 let currentFilter = "all";
-let monthFilterValue = "";
+let payoutFilterValue = "";
 let editingId = null;
+
+function loadPayouts(){
+  try{
+    const raw = localStorage.getItem(PAYOUT_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }catch(e){
+    console.error("Load payouts failed", e);
+    return [];
+  }
+}
+
+function savePayouts(payouts){
+  try{
+    localStorage.setItem(PAYOUT_KEY, JSON.stringify(payouts));
+  }catch(e){
+    console.error("Save payouts failed", e);
+    alert("Could not save payout dates.");
+  }
+}
+
+function sortedPayouts(){
+  return loadPayouts().slice().sort();
+}
+
+function formatDateLocal(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const day = String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
+
+function generateBiweeklyPayouts(startStr, endStr){
+  const start = new Date(startStr + "T00:00:00");
+  const end = new Date(endStr + "T00:00:00");
+  const result = [];
+  let cur = new Date(start);
+  while(cur <= end){
+    result.push(formatDateLocal(cur));
+    cur.setDate(cur.getDate() + 14);
+  }
+  return result;
+}
+
+function inPayoutRange(dueDateStr){
+  if(!payoutFilterValue) return true;
+  const payouts = sortedPayouts();
+  const idx = payouts.indexOf(payoutFilterValue);
+  const prevPayout = idx > 0 ? payouts[idx-1] : null;
+  if(prevPayout) return dueDateStr > prevPayout && dueDateStr <= payoutFilterValue;
+  return dueDateStr <= payoutFilterValue;
+}
+
+function renderPayoutSelect(){
+  const select = document.getElementById("payoutFilterSelect");
+  const payouts = sortedPayouts();
+  const currentVal = select.value;
+  select.innerHTML = '<option value="">All Payouts</option>';
+  payouts.forEach(p=>{
+    const opt = document.createElement("option");
+    opt.value = p;
+    opt.textContent = new Date(p + "T00:00:00").toLocaleDateString("en-PH", {month:"short", day:"numeric", year:"numeric"});
+    select.appendChild(opt);
+  });
+  if(payouts.includes(currentVal)){
+    select.value = currentVal;
+  } else {
+    select.value = "";
+    payoutFilterValue = "";
+  }
+}
+
+function renderPayoutChips(){
+  const payouts = sortedPayouts();
+  const container = document.getElementById("payoutChipsList");
+  container.innerHTML = "";
+  if(payouts.length === 0){
+    container.innerHTML = '<div class="empty" style="padding:6px 0;">No payout dates yet — add your first one above.</div>';
+    return;
+  }
+  payouts.forEach(p=>{
+    const label = new Date(p + "T00:00:00").toLocaleDateString("en-PH", {month:"short", day:"numeric", year:"numeric"});
+    const chip = document.createElement("div");
+    chip.className = "payout-chip";
+    chip.innerHTML = `<span>${label}</span><button data-payout="${p}">✕</button>`;
+    container.appendChild(chip);
+  });
+}
 
 function loadDues(){
   try{
@@ -377,10 +534,11 @@ function daysUntil(dateStr){
 
 function render(){
   const dues = loadDues();
+  const payoutScoped = dues.filter(d=>inPayoutRange(d.dueDate));
 
-  // summary
+  // summary (reflects the selected payout period, or everything if "All Payouts")
   let total=0, paid=0, remaining=0, overdueCount=0;
-  dues.forEach(d=>{
+  payoutScoped.forEach(d=>{
     total += Number(d.amount);
     if(d.paid){ paid += Number(d.amount); }
     else{
@@ -397,10 +555,9 @@ function render(){
   const listEl = document.getElementById("list");
   listEl.innerHTML = "";
 
-  let filtered = dues.slice();
+  let filtered = payoutScoped.slice();
   if(currentFilter === "unpaid") filtered = filtered.filter(d=>!d.paid);
   if(currentFilter === "paid") filtered = filtered.filter(d=>d.paid);
-  if(monthFilterValue) filtered = filtered.filter(d=>d.dueDate.slice(0,7) === monthFilterValue);
 
   filtered.sort((a,b)=> new Date(a.dueDate) - new Date(b.dueDate));
 
@@ -541,15 +698,41 @@ document.getElementById("list").addEventListener("click", function(e){
   }
 });
 
-document.getElementById("monthFilterInput").addEventListener("change", function(){
-  monthFilterValue = this.value;
+document.getElementById("addPayoutBtn").addEventListener("click", function(){
+  const val = document.getElementById("newPayoutDate").value;
+  if(!val) return;
+  let payouts = loadPayouts();
+  if(!payouts.includes(val)){
+    payouts.push(val);
+    savePayouts(payouts);
+  }
+  document.getElementById("newPayoutDate").value = "";
+  renderPayoutSelect();
+  renderPayoutChips();
   render();
 });
 
-document.getElementById("clearMonthFilterBtn").addEventListener("click", function(){
-  monthFilterValue = "";
-  document.getElementById("monthFilterInput").value = "";
+document.getElementById("payoutChipsList").addEventListener("click", function(e){
+  const p = e.target.getAttribute("data-payout");
+  if(!p) return;
+  if(confirm("Remove this payout date?")){
+    const payouts = loadPayouts().filter(x=>x !== p);
+    savePayouts(payouts);
+    if(payoutFilterValue === p) payoutFilterValue = "";
+    renderPayoutSelect();
+    renderPayoutChips();
+    render();
+  }
+});
+
+document.getElementById("payoutFilterSelect").addEventListener("change", function(){
+  payoutFilterValue = this.value;
   render();
+});
+
+document.getElementById("managePayoutsBtn").addEventListener("click", function(){
+  const panel = document.getElementById("managePayoutsPanel");
+  panel.style.display = panel.style.display === "none" ? "block" : "none";
 });
 
 function renderMonthly(){
@@ -622,6 +805,18 @@ document.querySelectorAll(".filters button").forEach(btn=>{
 // default due date to today for convenience
 document.getElementById("fDueDate").value = todayStr();
 
+// bi-weekly payout schedule: Aug 24, 2026 through Dec 2027
+// (forced once via version key so it corrects your earlier seed without
+// wiping out any custom payout dates you add afterward)
+const PAYOUT_SEED_VERSION_KEY = "dues_tracker_payouts_seed_version";
+const CURRENT_SEED_VERSION = "2";
+if(localStorage.getItem(PAYOUT_SEED_VERSION_KEY) !== CURRENT_SEED_VERSION){
+  savePayouts(generateBiweeklyPayouts("2026-08-24", "2027-12-31"));
+  localStorage.setItem(PAYOUT_SEED_VERSION_KEY, CURRENT_SEED_VERSION);
+}
+
+renderPayoutSelect();
+renderPayoutChips();
 render();
 </script>
 

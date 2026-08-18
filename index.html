@@ -191,6 +191,14 @@
     margin-top:4px;
   }
   .paid-date{font-size:11px;color:#5fd97a;margin-top:4px;}
+  .item-actions{display:flex;flex-direction:column;gap:6px;align-items:center;}
+  .edit-btn{
+    background:none;
+    border:none;
+    color:var(--green);
+    font-size:14px;
+    padding:4px;
+  }
   .del{
     background:none;
     border:none;
@@ -203,6 +211,32 @@
     color:var(--gray);
     font-size:13px;
     padding:30px 0;
+  }
+  .month-picker-row{
+    display:flex;
+    gap:8px;
+    align-items:flex-end;
+    padding:14px 16px 0;
+  }
+  .month-picker-row > div{flex:1;}
+  .clear-month-btn{
+    padding:8px 12px;
+    border:1px solid var(--border);
+    background:var(--surface);
+    border-radius:6px;
+    font-size:12px;
+    color:var(--text);
+    white-space:nowrap;
+  }
+  .cancel-btn{
+    width:100%;
+    padding:9px;
+    background:var(--surface-2);
+    color:var(--text);
+    border:1px solid var(--border);
+    border-radius:8px;
+    font-size:13px;
+    margin-top:6px;
   }
 </style>
 </head>
@@ -237,6 +271,14 @@
     <div class="label">Overdue</div>
     <div class="value" id="sumOverdue">0</div>
   </div>
+</div>
+
+<div class="month-picker-row">
+  <div>
+    <label>Filter by month</label>
+    <input type="month" id="monthFilterInput">
+  </div>
+  <button type="button" id="clearMonthFilterBtn" class="clear-month-btn">All Months</button>
 </div>
 
 <div class="filters">
@@ -283,6 +325,7 @@
     </div>
   </div>
   <button type="submit" class="add-btn">+ Add Due</button>
+  <button type="button" id="cancelEditBtn" class="cancel-btn" style="display:none;">Cancel Edit</button>
 </form>
 
 <div class="list" id="list"></div>
@@ -296,6 +339,8 @@
 <script>
 const STORAGE_KEY = "dues_tracker_v1";
 let currentFilter = "all";
+let monthFilterValue = "";
+let editingId = null;
 
 function loadDues(){
   try{
@@ -355,11 +400,12 @@ function render(){
   let filtered = dues.slice();
   if(currentFilter === "unpaid") filtered = filtered.filter(d=>!d.paid);
   if(currentFilter === "paid") filtered = filtered.filter(d=>d.paid);
+  if(monthFilterValue) filtered = filtered.filter(d=>d.dueDate.slice(0,7) === monthFilterValue);
 
   filtered.sort((a,b)=> new Date(a.dueDate) - new Date(b.dueDate));
 
   if(filtered.length === 0){
-    listEl.innerHTML = '<div class="empty">No dues here yet.</div>';
+    listEl.innerHTML = '<div class="empty">No dues match this view.</div>';
     return;
   }
 
@@ -389,7 +435,10 @@ function render(){
         <span class="tag">${escapeHtml(d.category)}</span>
         ${paidDateHtml}
       </div>
-      <button class="del" data-id="${d.id}">✕</button>
+      <div class="item-actions">
+        <button class="edit-btn" data-id="${d.id}">✎</button>
+        <button class="del" data-id="${d.id}">✕</button>
+      </div>
     `;
     listEl.appendChild(div);
   });
@@ -401,27 +450,72 @@ function escapeHtml(str){
   return div.innerHTML;
 }
 
+function resetFormState(){
+  editingId = null;
+  document.querySelector("#addForm h2").textContent = "Add a due";
+  document.querySelector("#addForm .add-btn").textContent = "+ Add Due";
+  document.getElementById("cancelEditBtn").style.display = "none";
+}
+
+function startEdit(id){
+  const dues = loadDues();
+  const d = dues.find(x=>x.id === id);
+  if(!d) return;
+  document.getElementById("fName").value = d.name;
+  document.getElementById("fAmount").value = d.amount;
+  document.getElementById("fDueDate").value = d.dueDate;
+  document.getElementById("fCategory").value = d.category;
+  document.getElementById("fNotes").value = d.notes || "";
+  editingId = id;
+  document.querySelector("#addForm h2").textContent = "Edit due";
+  document.querySelector("#addForm .add-btn").textContent = "Save Changes";
+  document.getElementById("cancelEditBtn").style.display = "block";
+  document.getElementById("addForm").scrollIntoView({behavior:"smooth", block:"start"});
+}
+
 document.getElementById("addForm").addEventListener("submit", function(e){
   e.preventDefault();
-  const dues = loadDues();
-  dues.push({
-    id: Date.now().toString(),
+  let dues = loadDues();
+  const formData = {
     name: document.getElementById("fName").value.trim(),
     amount: parseFloat(document.getElementById("fAmount").value),
     dueDate: document.getElementById("fDueDate").value,
     category: document.getElementById("fCategory").value,
-    notes: document.getElementById("fNotes").value.trim(),
-    paid: false,
-    paidDate: null
-  });
+    notes: document.getElementById("fNotes").value.trim()
+  };
+
+  if(editingId){
+    dues = dues.map(d => d.id === editingId ? {...d, ...formData} : d);
+  } else {
+    dues.push({
+      id: Date.now().toString(),
+      ...formData,
+      paid: false,
+      paidDate: null
+    });
+  }
+
   saveDues(dues);
   this.reset();
+  resetFormState();
+  document.getElementById("fDueDate").value = todayStr();
   render();
+});
+
+document.getElementById("cancelEditBtn").addEventListener("click", function(){
+  document.getElementById("addForm").reset();
+  document.getElementById("fDueDate").value = todayStr();
+  resetFormState();
 });
 
 document.getElementById("list").addEventListener("click", function(e){
   const id = e.target.getAttribute("data-id");
   if(!id) return;
+
+  if(e.target.classList.contains("edit-btn")){
+    startEdit(id);
+    return;
+  }
 
   let dues = loadDues();
 
@@ -442,8 +536,20 @@ document.getElementById("list").addEventListener("click", function(e){
       dues = dues.filter(d=>d.id !== id);
       saveDues(dues);
       render();
+      if(editingId === id) resetFormState();
     }
   }
+});
+
+document.getElementById("monthFilterInput").addEventListener("change", function(){
+  monthFilterValue = this.value;
+  render();
+});
+
+document.getElementById("clearMonthFilterBtn").addEventListener("click", function(){
+  monthFilterValue = "";
+  document.getElementById("monthFilterInput").value = "";
+  render();
 });
 
 function renderMonthly(){

@@ -56,6 +56,49 @@
   .card.unpaid .value{color:#ff6b6b;}
   .card.overdue .value{color:#ffa552;}
 
+  .tabs{
+    display:flex;
+    gap:8px;
+    padding:14px 16px 0;
+  }
+  .tab-btn{
+    flex:1;
+    padding:10px 0;
+    border:1px solid var(--border);
+    background:var(--surface);
+    border-radius:8px;
+    font-size:13px;
+    font-weight:600;
+    color:var(--text);
+  }
+  .tab-btn.active{
+    background:var(--green);
+    color:#0d1f18;
+    border-color:var(--green);
+  }
+
+  .month-card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:12px 14px;
+    margin-bottom:10px;
+  }
+  .month-card .month-name{
+    font-weight:700;
+    font-size:15px;
+    margin-bottom:8px;
+    color:var(--text);
+  }
+  .month-card.current{border-color:var(--green);}
+  .month-rows{display:flex;flex-direction:column;gap:4px;font-size:13px;}
+  .month-rows .row-line{display:flex;justify-content:space-between;}
+  .month-rows .row-line span:first-child{color:var(--gray);}
+  .month-rows .total span:last-child{color:var(--green);font-weight:700;}
+  .month-rows .paid span:last-child{color:#5fd97a;font-weight:600;}
+  .month-rows .remaining span:last-child{color:#ff6b6b;font-weight:600;}
+  .month-count{font-size:11px;color:var(--gray);margin-top:6px;}
+
   .filters{
     display:flex;
     gap:8px;
@@ -170,6 +213,13 @@
   <p>Personal offline tracker — data stays on this device</p>
 </header>
 
+<div class="tabs">
+  <button class="tab-btn active" data-tab="dues">Dues</button>
+  <button class="tab-btn" data-tab="monthly">Monthly Summary</button>
+</div>
+
+<div id="duesView">
+
 <div class="summary">
   <div class="card total">
     <div class="label">Total Dues</div>
@@ -236,6 +286,12 @@
 </form>
 
 <div class="list" id="list"></div>
+
+</div>
+
+<div id="monthlyView" style="display:none;">
+  <div class="list" id="monthlyList"></div>
+</div>
 
 <script>
 const STORAGE_KEY = "dues_tracker_v1";
@@ -388,6 +444,64 @@ document.getElementById("list").addEventListener("click", function(e){
       render();
     }
   }
+});
+
+function renderMonthly(){
+  const dues = loadDues();
+  const groups = {};
+
+  dues.forEach(d=>{
+    const key = d.dueDate.slice(0,7); // "YYYY-MM"
+    if(!groups[key]) groups[key] = {total:0, paid:0, remaining:0, count:0};
+    groups[key].total += Number(d.amount);
+    groups[key].count += 1;
+    if(d.paid) groups[key].paid += Number(d.amount);
+    else groups[key].remaining += Number(d.amount);
+  });
+
+  const keys = Object.keys(groups).sort().reverse(); // most recent month first
+  const monthlyList = document.getElementById("monthlyList");
+  monthlyList.innerHTML = "";
+
+  if(keys.length === 0){
+    monthlyList.innerHTML = '<div class="empty">No dues added yet.</div>';
+    return;
+  }
+
+  const currentMonthKey = todayStr().slice(0,7);
+
+  keys.forEach(key=>{
+    const g = groups[key];
+    const label = new Date(key + "-01T00:00:00").toLocaleDateString("en-PH", {month:"long", year:"numeric"});
+    const div = document.createElement("div");
+    div.className = "month-card" + (key === currentMonthKey ? " current" : "");
+    div.innerHTML = `
+      <div class="month-name">${label}${key === currentMonthKey ? " (current)" : ""}</div>
+      <div class="month-rows">
+        <div class="row-line total"><span>Total dues</span><span>${fmtMoney(g.total)}</span></div>
+        <div class="row-line paid"><span>Paid</span><span>${fmtMoney(g.paid)}</span></div>
+        <div class="row-line remaining"><span>Remaining</span><span>${fmtMoney(g.remaining)}</span></div>
+      </div>
+      <div class="month-count">${g.count} due${g.count === 1 ? "" : "s"}</div>
+    `;
+    monthlyList.appendChild(div);
+  });
+}
+
+document.querySelectorAll(".tab-btn").forEach(btn=>{
+  btn.addEventListener("click", function(){
+    document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));
+    this.classList.add("active");
+    const tab = this.getAttribute("data-tab");
+    if(tab === "dues"){
+      document.getElementById("duesView").style.display = "";
+      document.getElementById("monthlyView").style.display = "none";
+    } else {
+      document.getElementById("duesView").style.display = "none";
+      document.getElementById("monthlyView").style.display = "";
+      renderMonthly();
+    }
+  });
 });
 
 document.querySelectorAll(".filters button").forEach(btn=>{

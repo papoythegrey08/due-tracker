@@ -128,6 +128,25 @@
     padding:12px;
   }
   form h2{font-size:14px;margin:0 0 8px;color:var(--text);}
+  .checkbox-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:13px;
+    color:var(--text);
+    margin-bottom:8px;
+  }
+  .checkbox-row input[type="checkbox"]{
+    width:18px;
+    height:18px;
+    flex-shrink:0;
+    accent-color:var(--green);
+  }
+  .checkbox-row label{
+    font-size:13px;
+    color:var(--text);
+    margin-bottom:0;
+  }
   .row{display:flex;gap:8px;margin-bottom:8px;}
   .row > div{flex:1;}
   label{font-size:11px;color:var(--gray);display:block;margin-bottom:3px;}
@@ -393,6 +412,25 @@
       <input type="text" id="fNotes" placeholder="e.g. installment 3 of 12">
     </div>
   </div>
+
+  <div id="recurringRow" class="checkbox-row">
+    <input type="checkbox" id="fRecurring">
+    <label for="fRecurring" style="margin:0;">This repeats every ___ days until a date</label>
+  </div>
+
+  <div id="recurringFields" style="display:none;">
+    <div class="row">
+      <div>
+        <label>Repeat every (days)</label>
+        <input type="number" id="fRepeatDays" min="1" placeholder="e.g. 30">
+      </div>
+      <div>
+        <label>Until</label>
+        <input type="date" id="fRepeatUntil">
+      </div>
+    </div>
+  </div>
+
   <button type="submit" class="add-btn">+ Add Due</button>
   <button type="button" id="cancelEditBtn" class="cancel-btn" style="display:none;">Cancel Edit</button>
 </form>
@@ -612,6 +650,9 @@ function resetFormState(){
   document.querySelector("#addForm h2").textContent = "Add a due";
   document.querySelector("#addForm .add-btn").textContent = "+ Add Due";
   document.getElementById("cancelEditBtn").style.display = "none";
+  document.getElementById("recurringRow").style.display = "flex";
+  document.getElementById("fRecurring").checked = false;
+  document.getElementById("recurringFields").style.display = "none";
 }
 
 function startEdit(id){
@@ -627,8 +668,17 @@ function startEdit(id){
   document.querySelector("#addForm h2").textContent = "Edit due";
   document.querySelector("#addForm .add-btn").textContent = "Save Changes";
   document.getElementById("cancelEditBtn").style.display = "block";
+  document.getElementById("recurringRow").style.display = "none";
+  document.getElementById("fRecurring").checked = false;
+  document.getElementById("recurringFields").style.display = "none";
   document.getElementById("addForm").scrollIntoView({behavior:"smooth", block:"start"});
 }
+
+document.getElementById("fRecurring").addEventListener("change", function(){
+  const show = this.checked;
+  document.getElementById("recurringFields").style.display = show ? "block" : "none";
+  document.querySelector("#addForm .add-btn").textContent = show ? "+ Add Recurring Dues" : "+ Add Due";
+});
 
 document.getElementById("addForm").addEventListener("submit", function(e){
   e.preventDefault();
@@ -641,8 +691,50 @@ document.getElementById("addForm").addEventListener("submit", function(e){
     notes: document.getElementById("fNotes").value.trim()
   };
 
+  const isRecurring = !editingId && document.getElementById("fRecurring").checked;
+
   if(editingId){
     dues = dues.map(d => d.id === editingId ? {...d, ...formData} : d);
+
+  } else if(isRecurring){
+    const repeatDays = parseInt(document.getElementById("fRepeatDays").value, 10);
+    const untilDate = document.getElementById("fRepeatUntil").value;
+
+    if(!repeatDays || repeatDays < 1){
+      alert("Enter a valid number of days to repeat every.");
+      return;
+    }
+    if(!untilDate || untilDate < formData.dueDate){
+      alert("The 'Until' date must be on or after the due date.");
+      return;
+    }
+
+    const occurrenceDates = [];
+    let cur = new Date(formData.dueDate + "T00:00:00");
+    const end = new Date(untilDate + "T00:00:00");
+    while(cur <= end){
+      occurrenceDates.push(formatDateLocal(cur));
+      cur.setDate(cur.getDate() + repeatDays);
+    }
+
+    if(occurrenceDates.length > 60){
+      const proceed = confirm(`This will create ${occurrenceDates.length} due entries. Continue?`);
+      if(!proceed) return;
+    }
+
+    occurrenceDates.forEach((dateStr, idx)=>{
+      dues.push({
+        id: (Date.now() + idx).toString(),
+        name: formData.name,
+        amount: formData.amount,
+        dueDate: dateStr,
+        category: formData.category,
+        notes: formData.notes,
+        paid: false,
+        paidDate: null
+      });
+    });
+
   } else {
     dues.push({
       id: Date.now().toString(),
@@ -656,6 +748,7 @@ document.getElementById("addForm").addEventListener("submit", function(e){
   this.reset();
   resetFormState();
   document.getElementById("fDueDate").value = todayStr();
+  document.getElementById("recurringFields").style.display = "none";
   render();
 });
 

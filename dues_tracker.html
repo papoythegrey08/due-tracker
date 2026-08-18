@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dues Tracker</title>
+<style>
+  :root{
+    --green:#3ddc97;
+    --green-dark:#1f4e3d;
+    --green-tag-bg:#173d30;
+    --yellow:#4a3f1a;
+    --yellow-border:#6b5b26;
+    --red:#3a2222;
+    --red-border:#5c2e2e;
+    --red-text:#ff6b6b;
+    --gray:#9a9a9a;
+    --border:#2c2c2c;
+    --bg:#121212;
+    --surface:#1c1c1c;
+    --surface-2:#232323;
+    --text:#eaeaea;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    padding-bottom:40px;
+  }
+  header{
+    background:var(--green-dark);
+    color:#fff;
+    padding:20px 16px 16px;
+  }
+  header h1{margin:0;font-size:20px;}
+  header p{margin:4px 0 0;font-size:12px;opacity:.8;}
+
+  .summary{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+    padding:14px 16px 0;
+  }
+  .card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:10px 12px;
+  }
+  .card .label{font-size:11px;color:var(--gray);}
+  .card .value{font-size:18px;font-weight:700;margin-top:2px;}
+  .card.total .value{color:var(--green);}
+  .card.paid .value{color:#5fd97a;}
+  .card.unpaid .value{color:#ff6b6b;}
+  .card.overdue .value{color:#ffa552;}
+
+  .filters{
+    display:flex;
+    gap:8px;
+    padding:14px 16px 0;
+  }
+  .filters button{
+    flex:1;
+    padding:8px 0;
+    border:1px solid var(--border);
+    background:var(--surface);
+    border-radius:8px;
+    font-size:13px;
+    color:var(--text);
+  }
+  .filters button.active{
+    background:var(--green);
+    color:#0d1f18;
+    border-color:var(--green);
+    font-weight:600;
+  }
+
+  form{
+    margin:14px 16px 0;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:12px;
+  }
+  form h2{font-size:14px;margin:0 0 8px;color:var(--text);}
+  .row{display:flex;gap:8px;margin-bottom:8px;}
+  .row > div{flex:1;}
+  label{font-size:11px;color:var(--gray);display:block;margin-bottom:3px;}
+  input,select{
+    width:100%;
+    padding:8px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    font-size:14px;
+    background:var(--surface-2);
+    color:var(--text);
+  }
+  input::placeholder{color:#777;}
+  input[type="date"]{color-scheme:dark;}
+  .add-btn{
+    width:100%;
+    padding:10px;
+    background:var(--green);
+    color:#0d1f18;
+    border:none;
+    border-radius:8px;
+    font-size:14px;
+    font-weight:700;
+    margin-top:4px;
+  }
+
+  .list{padding:14px 16px 0;}
+  .item{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:10px 12px;
+    margin-bottom:10px;
+    display:flex;
+    align-items:flex-start;
+    gap:10px;
+  }
+  .item.overdue{background:var(--red);border-color:var(--red-border);}
+  .item.due-soon{background:var(--yellow);border-color:var(--yellow-border);}
+  .item.is-paid{opacity:.55;}
+  .item.is-paid .name{text-decoration:line-through;}
+
+  .checkbox{
+    margin-top:2px;
+    width:20px;
+    height:20px;
+    flex-shrink:0;
+    accent-color:var(--green);
+  }
+  .item-body{flex:1;min-width:0;}
+  .name{font-weight:600;font-size:14px;color:var(--text);}
+  .meta{font-size:12px;color:var(--gray);margin-top:2px;}
+  .amount{font-weight:700;font-size:14px;margin-top:4px;color:var(--text);}
+  .tag{
+    display:inline-block;
+    font-size:10px;
+    background:var(--green-tag-bg);
+    color:var(--green);
+    padding:2px 6px;
+    border-radius:20px;
+    margin-top:4px;
+  }
+  .paid-date{font-size:11px;color:#5fd97a;margin-top:4px;}
+  .del{
+    background:none;
+    border:none;
+    color:#ff6b6b;
+    font-size:12px;
+    padding:4px;
+  }
+  .empty{
+    text-align:center;
+    color:var(--gray);
+    font-size:13px;
+    padding:30px 0;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Dues Tracker</h1>
+  <p>Personal offline tracker — data stays on this device</p>
+</header>
+
+<div class="summary">
+  <div class="card total">
+    <div class="label">Total Dues</div>
+    <div class="value" id="sumTotal">₱0</div>
+  </div>
+  <div class="card unpaid">
+    <div class="label">Remaining</div>
+    <div class="value" id="sumRemaining">₱0</div>
+  </div>
+  <div class="card paid">
+    <div class="label">Paid</div>
+    <div class="value" id="sumPaid">₱0</div>
+  </div>
+  <div class="card overdue">
+    <div class="label">Overdue</div>
+    <div class="value" id="sumOverdue">0</div>
+  </div>
+</div>
+
+<div class="filters">
+  <button data-filter="all" class="active">All</button>
+  <button data-filter="unpaid">Unpaid</button>
+  <button data-filter="paid">Paid</button>
+</div>
+
+<form id="addForm">
+  <h2>Add a due</h2>
+  <div class="row">
+    <div>
+      <label>Name</label>
+      <input type="text" id="fName" placeholder="e.g. BDO Credit Card" required>
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label>Amount (₱)</label>
+      <input type="number" id="fAmount" step="0.01" min="0" required>
+    </div>
+    <div>
+      <label>Due date</label>
+      <input type="date" id="fDueDate" required>
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label>Category</label>
+      <select id="fCategory">
+        <option>Loan</option>
+        <option>Credit Card</option>
+        <option>Subscription</option>
+        <option>Utility Bill</option>
+        <option>Business</option>
+        <option>Other</option>
+      </select>
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label>Notes (optional)</label>
+      <input type="text" id="fNotes" placeholder="e.g. installment 3 of 12">
+    </div>
+  </div>
+  <button type="submit" class="add-btn">+ Add Due</button>
+</form>
+
+<div class="list" id="list"></div>
+
+<script>
+const STORAGE_KEY = "dues_tracker_v1";
+let currentFilter = "all";
+
+function loadDues(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }catch(e){
+    console.error("Load failed", e);
+    return [];
+  }
+}
+
+function saveDues(dues){
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(dues));
+  }catch(e){
+    console.error("Save failed", e);
+    alert("Could not save. Your browser storage might be full or disabled.");
+  }
+}
+
+function fmtMoney(n){
+  return "₱" + Number(n).toLocaleString("en-PH", {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function todayStr(){
+  return new Date().toISOString().split("T")[0];
+}
+
+function daysUntil(dateStr){
+  const today = new Date(todayStr());
+  const due = new Date(dateStr);
+  return Math.round((due - today) / (1000*60*60*24));
+}
+
+function render(){
+  const dues = loadDues();
+
+  // summary
+  let total=0, paid=0, remaining=0, overdueCount=0;
+  dues.forEach(d=>{
+    total += Number(d.amount);
+    if(d.paid){ paid += Number(d.amount); }
+    else{
+      remaining += Number(d.amount);
+      if(daysUntil(d.dueDate) < 0) overdueCount++;
+    }
+  });
+  document.getElementById("sumTotal").textContent = fmtMoney(total);
+  document.getElementById("sumPaid").textContent = fmtMoney(paid);
+  document.getElementById("sumRemaining").textContent = fmtMoney(remaining);
+  document.getElementById("sumOverdue").textContent = overdueCount;
+
+  // list
+  const listEl = document.getElementById("list");
+  listEl.innerHTML = "";
+
+  let filtered = dues.slice();
+  if(currentFilter === "unpaid") filtered = filtered.filter(d=>!d.paid);
+  if(currentFilter === "paid") filtered = filtered.filter(d=>d.paid);
+
+  filtered.sort((a,b)=> new Date(a.dueDate) - new Date(b.dueDate));
+
+  if(filtered.length === 0){
+    listEl.innerHTML = '<div class="empty">No dues here yet.</div>';
+    return;
+  }
+
+  filtered.forEach(d=>{
+    const div = document.createElement("div");
+    let cls = "item";
+    if(d.paid){
+      cls += " is-paid";
+    } else {
+      const dleft = daysUntil(d.dueDate);
+      if(dleft < 0) cls += " overdue";
+      else if(dleft <= 7) cls += " due-soon";
+    }
+    div.className = cls;
+
+    const dueDateFormatted = new Date(d.dueDate + "T00:00:00").toLocaleDateString("en-PH", {month:"short", day:"numeric", year:"numeric"});
+    const paidDateHtml = d.paid && d.paidDate
+      ? `<div class="paid-date">✓ Paid on ${new Date(d.paidDate + "T00:00:00").toLocaleDateString("en-PH", {month:"short", day:"numeric", year:"numeric"})}</div>`
+      : "";
+
+    div.innerHTML = `
+      <input type="checkbox" class="checkbox" ${d.paid ? "checked" : ""} data-id="${d.id}">
+      <div class="item-body">
+        <div class="name">${escapeHtml(d.name)}</div>
+        <div class="meta">Due ${dueDateFormatted}${d.notes ? " · " + escapeHtml(d.notes) : ""}</div>
+        <div class="amount">${fmtMoney(d.amount)}</div>
+        <span class="tag">${escapeHtml(d.category)}</span>
+        ${paidDateHtml}
+      </div>
+      <button class="del" data-id="${d.id}">✕</button>
+    `;
+    listEl.appendChild(div);
+  });
+}
+
+function escapeHtml(str){
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+document.getElementById("addForm").addEventListener("submit", function(e){
+  e.preventDefault();
+  const dues = loadDues();
+  dues.push({
+    id: Date.now().toString(),
+    name: document.getElementById("fName").value.trim(),
+    amount: parseFloat(document.getElementById("fAmount").value),
+    dueDate: document.getElementById("fDueDate").value,
+    category: document.getElementById("fCategory").value,
+    notes: document.getElementById("fNotes").value.trim(),
+    paid: false,
+    paidDate: null
+  });
+  saveDues(dues);
+  this.reset();
+  render();
+});
+
+document.getElementById("list").addEventListener("click", function(e){
+  const id = e.target.getAttribute("data-id");
+  if(!id) return;
+
+  let dues = loadDues();
+
+  if(e.target.classList.contains("checkbox")){
+    dues = dues.map(d=>{
+      if(d.id === id){
+        d.paid = e.target.checked;
+        d.paidDate = e.target.checked ? todayStr() : null;
+      }
+      return d;
+    });
+    saveDues(dues);
+    render();
+  }
+
+  if(e.target.classList.contains("del")){
+    if(confirm("Delete this due?")){
+      dues = dues.filter(d=>d.id !== id);
+      saveDues(dues);
+      render();
+    }
+  }
+});
+
+document.querySelectorAll(".filters button").forEach(btn=>{
+  btn.addEventListener("click", function(){
+    document.querySelectorAll(".filters button").forEach(b=>b.classList.remove("active"));
+    this.classList.add("active");
+    currentFilter = this.getAttribute("data-filter");
+    render();
+  });
+});
+
+// default due date to today for convenience
+document.getElementById("fDueDate").value = todayStr();
+
+render();
+</script>
+
+</body>
+</html>

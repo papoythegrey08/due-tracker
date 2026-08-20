@@ -128,6 +128,21 @@
     padding:12px;
   }
   form h2{font-size:14px;margin:0 0 8px;color:var(--text);}
+  .form-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:8px;
+  }
+  .form-header h2{margin:0;}
+  .close-form-btn{
+    background:none;
+    border:none;
+    color:var(--gray);
+    font-size:16px;
+    padding:4px 6px;
+    line-height:1;
+  }
   .checkbox-row{
     display:flex;
     align-items:center;
@@ -155,7 +170,7 @@
     padding:8px;
     border:1px solid var(--border);
     border-radius:6px;
-    font-size:14px;
+    font-size:16px;
     background:var(--surface-2);
     color:var(--text);
   }
@@ -172,6 +187,7 @@
     font-weight:700;
     margin-top:4px;
   }
+  .add-btn-wrap{padding:14px 16px 0;}
 
   .list{padding:14px 16px 0;}
   .item{
@@ -305,6 +321,23 @@
       align-items:stretch;
     }
   }
+  .tab-btn-icon{
+    flex:0 0 52px;
+    padding:10px 0;
+    font-size:16px;
+  }
+  .search-tab-box{
+    padding:14px 16px 0;
+  }
+  .search-input{
+    width:100%;
+    padding:8px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    font-size:16px;
+    background:var(--surface-2);
+    color:var(--text);
+  }
   .cancel-btn{
     width:100%;
     padding:9px;
@@ -327,6 +360,7 @@
 <div class="tabs">
   <button class="tab-btn active" data-tab="dues">Dues</button>
   <button class="tab-btn" data-tab="monthly">Monthly Summary</button>
+  <button class="tab-btn tab-btn-icon" data-tab="search" aria-label="Search">🔍</button>
 </div>
 
 <div id="duesView">
@@ -375,8 +409,15 @@
   <button data-filter="paid">Paid</button>
 </div>
 
-<form id="addForm">
-  <h2>Add a due</h2>
+<div class="add-btn-wrap">
+  <button type="button" id="showAddFormBtn" class="add-btn">+ Add a Due</button>
+</div>
+
+<form id="addForm" style="display:none;">
+  <div class="form-header">
+    <h2>Add a due</h2>
+    <button type="button" id="closeFormBtn" class="close-form-btn" aria-label="Close">✕</button>
+  </div>
   <div class="row">
     <div>
       <label>Name</label>
@@ -455,12 +496,20 @@
   <div class="list" id="monthlyList"></div>
 </div>
 
+<div id="searchView" style="display:none;">
+  <div class="search-tab-box">
+    <input type="text" id="globalSearchInput" class="search-input" placeholder="Search name or amount">
+  </div>
+  <div class="list" id="searchResultsList"></div>
+</div>
+
 <script>
 const STORAGE_KEY = "dues_tracker_v1";
 const PAYOUT_KEY = "dues_tracker_payouts_v1";
 let currentFilter = "all";
 let payoutFilterValue = "";
 let editingId = null;
+let searchTerm = "";
 
 function loadPayouts(){
   try{
@@ -626,6 +675,75 @@ function daysUntil(dateStr){
   return Math.round((due - today) / (1000*60*60*24));
 }
 
+function buildItemElement(d){
+  const div = document.createElement("div");
+  let cls = "item";
+  if(d.paid){
+    cls += " is-paid";
+  } else {
+    const dleft = daysUntil(d.dueDate);
+    if(dleft < 0) cls += " overdue";
+    else if(dleft <= 7) cls += " due-soon";
+  }
+  div.className = cls;
+
+  const dueDateFormatted = new Date(d.dueDate + "T00:00:00").toLocaleDateString("en-PH", {month:"short", day:"numeric", year:"numeric"});
+  const paidDateHtml = d.paid && d.paidDate
+    ? `<div class="paid-date">✓ Paid on ${new Date(d.paidDate + "T00:00:00").toLocaleDateString("en-PH", {month:"short", day:"numeric", year:"numeric"})}</div>`
+    : "";
+
+  div.innerHTML = `
+    <input type="checkbox" class="checkbox" ${d.paid ? "checked" : ""} data-id="${d.id}">
+    <div class="item-body">
+      <div class="name">${escapeHtml(d.name)}</div>
+      <div class="meta">Due ${dueDateFormatted}${d.notes ? " · " + escapeHtml(d.notes) : ""}</div>
+      <div class="amount">${fmtMoney(d.amount)}</div>
+      <span class="tag">${escapeHtml(d.category)}</span>
+      ${paidDateHtml}
+    </div>
+    <div class="item-actions">
+      <button class="edit-btn" data-id="${d.id}">✎</button>
+      <button class="del" data-id="${d.id}">✕</button>
+    </div>
+  `;
+  return div;
+}
+
+function handleDueListClick(e){
+  const id = e.target.getAttribute("data-id");
+  if(!id) return;
+
+  if(e.target.classList.contains("edit-btn")){
+    startEdit(id);
+    return;
+  }
+
+  let dues = loadDues();
+
+  if(e.target.classList.contains("checkbox")){
+    dues = dues.map(d=>{
+      if(d.id === id){
+        d.paid = e.target.checked;
+        d.paidDate = e.target.checked ? todayStr() : null;
+      }
+      return d;
+    });
+    saveDues(dues);
+    render();
+    if(document.getElementById("searchView").style.display !== "none") renderSearchResults();
+  }
+
+  if(e.target.classList.contains("del")){
+    if(confirm("Delete this due?")){
+      dues = dues.filter(d=>d.id !== id);
+      saveDues(dues);
+      render();
+      if(document.getElementById("searchView").style.display !== "none") renderSearchResults();
+      if(editingId === id) resetFormState();
+    }
+  }
+}
+
 function render(){
   const dues = loadDues();
   const payoutScoped = dues.filter(d=>inPayoutRange(d.dueDate));
@@ -661,37 +779,33 @@ function render(){
   }
 
   filtered.forEach(d=>{
-    const div = document.createElement("div");
-    let cls = "item";
-    if(d.paid){
-      cls += " is-paid";
-    } else {
-      const dleft = daysUntil(d.dueDate);
-      if(dleft < 0) cls += " overdue";
-      else if(dleft <= 7) cls += " due-soon";
-    }
-    div.className = cls;
+    listEl.appendChild(buildItemElement(d));
+  });
+}
 
-    const dueDateFormatted = new Date(d.dueDate + "T00:00:00").toLocaleDateString("en-PH", {month:"short", day:"numeric", year:"numeric"});
-    const paidDateHtml = d.paid && d.paidDate
-      ? `<div class="paid-date">✓ Paid on ${new Date(d.paidDate + "T00:00:00").toLocaleDateString("en-PH", {month:"short", day:"numeric", year:"numeric"})}</div>`
-      : "";
+function renderSearchResults(){
+  const resultsEl = document.getElementById("searchResultsList");
+  resultsEl.innerHTML = "";
 
-    div.innerHTML = `
-      <input type="checkbox" class="checkbox" ${d.paid ? "checked" : ""} data-id="${d.id}">
-      <div class="item-body">
-        <div class="name">${escapeHtml(d.name)}</div>
-        <div class="meta">Due ${dueDateFormatted}${d.notes ? " · " + escapeHtml(d.notes) : ""}</div>
-        <div class="amount">${fmtMoney(d.amount)}</div>
-        <span class="tag">${escapeHtml(d.category)}</span>
-        ${paidDateHtml}
-      </div>
-      <div class="item-actions">
-        <button class="edit-btn" data-id="${d.id}">✎</button>
-        <button class="del" data-id="${d.id}">✕</button>
-      </div>
-    `;
-    listEl.appendChild(div);
+  if(!searchTerm){
+    resultsEl.innerHTML = '<div class="empty">Type a due\'s name or amount above to search all dues.</div>';
+    return;
+  }
+
+  const dues = loadDues().filter(d=>
+    d.name.toLowerCase().includes(searchTerm) ||
+    String(d.amount).includes(searchTerm)
+  );
+
+  dues.sort((a,b)=> new Date(a.dueDate) - new Date(b.dueDate));
+
+  if(dues.length === 0){
+    resultsEl.innerHTML = '<div class="empty">No dues match your search.</div>';
+    return;
+  }
+
+  dues.forEach(d=>{
+    resultsEl.appendChild(buildItemElement(d));
   });
 }
 
@@ -711,12 +825,16 @@ function resetFormState(){
   document.getElementById("recurringFields").style.display = "none";
   document.getElementById("fRepeatPattern").value = "custom";
   document.getElementById("customDaysRow").style.display = "flex";
+  document.getElementById("addForm").style.display = "none";
+  document.getElementById("showAddFormBtn").style.display = "block";
 }
 
 function startEdit(id){
   const dues = loadDues();
   const d = dues.find(x=>x.id === id);
   if(!d) return;
+  document.getElementById("showAddFormBtn").style.display = "none";
+  document.getElementById("addForm").style.display = "block";
   document.getElementById("fName").value = d.name;
   document.getElementById("fAmount").value = d.amount;
   document.getElementById("fDueDate").value = d.dueDate;
@@ -832,38 +950,14 @@ document.getElementById("cancelEditBtn").addEventListener("click", function(){
   resetFormState();
 });
 
-document.getElementById("list").addEventListener("click", function(e){
-  const id = e.target.getAttribute("data-id");
-  if(!id) return;
-
-  if(e.target.classList.contains("edit-btn")){
-    startEdit(id);
-    return;
-  }
-
-  let dues = loadDues();
-
-  if(e.target.classList.contains("checkbox")){
-    dues = dues.map(d=>{
-      if(d.id === id){
-        d.paid = e.target.checked;
-        d.paidDate = e.target.checked ? todayStr() : null;
-      }
-      return d;
-    });
-    saveDues(dues);
-    render();
-  }
-
-  if(e.target.classList.contains("del")){
-    if(confirm("Delete this due?")){
-      dues = dues.filter(d=>d.id !== id);
-      saveDues(dues);
-      render();
-      if(editingId === id) resetFormState();
-    }
-  }
+document.getElementById("closeFormBtn").addEventListener("click", function(){
+  document.getElementById("addForm").reset();
+  document.getElementById("fDueDate").value = todayStr();
+  resetFormState();
 });
+
+document.getElementById("list").addEventListener("click", handleDueListClick);
+document.getElementById("searchResultsList").addEventListener("click", handleDueListClick);
 
 document.getElementById("addPayoutBtn").addEventListener("click", function(){
   const val = document.getElementById("newPayoutDate").value;
@@ -949,13 +1043,13 @@ document.querySelectorAll(".tab-btn").forEach(btn=>{
     document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));
     this.classList.add("active");
     const tab = this.getAttribute("data-tab");
-    if(tab === "dues"){
-      document.getElementById("duesView").style.display = "";
-      document.getElementById("monthlyView").style.display = "none";
-    } else {
-      document.getElementById("duesView").style.display = "none";
-      document.getElementById("monthlyView").style.display = "";
-      renderMonthly();
+    document.getElementById("duesView").style.display = tab === "dues" ? "" : "none";
+    document.getElementById("monthlyView").style.display = tab === "monthly" ? "" : "none";
+    document.getElementById("searchView").style.display = tab === "search" ? "" : "none";
+    if(tab === "monthly") renderMonthly();
+    if(tab === "search"){
+      renderSearchResults();
+      document.getElementById("globalSearchInput").focus();
     }
   });
 });
@@ -967,6 +1061,17 @@ document.querySelectorAll(".filters button").forEach(btn=>{
     currentFilter = this.getAttribute("data-filter");
     render();
   });
+});
+
+document.getElementById("globalSearchInput").addEventListener("input", function(){
+  searchTerm = this.value.trim().toLowerCase();
+  renderSearchResults();
+});
+
+document.getElementById("showAddFormBtn").addEventListener("click", function(){
+  this.style.display = "none";
+  document.getElementById("addForm").style.display = "block";
+  document.getElementById("fName").focus();
 });
 
 // default due date to today for convenience
